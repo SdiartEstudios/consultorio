@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import os
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -11,14 +11,14 @@ from googleapiclient.discovery import build
 st.set_page_config(page_title="Agenda del Consultorio", page_icon=":D", layout="wide")
 
 ARCHIVO_DATOS = "citas.csv"
-SCOPES = ['https://www.googleapis.com/auth/tasks']
+# Cambiamos el alcance (scope) para Google Calendar
+SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 
-def obtener_servicio_tasks():
+def obtener_servicio_calendar():
     creds = None
     
     if "google_creds" in st.secrets:
-        
         pass
     
     if os.path.exists('token.json'):
@@ -32,26 +32,34 @@ def obtener_servicio_tasks():
                 creds = flow.run_local_server(port=0)
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
-    return build('tasks', 'v1', credentials=creds)
+    return build('calendar', 'v3', credentials=creds)
 
 
-def crear_recordatorio_google_tasks(nombre, telefono, fecha, hora, motivo):
+def crear_evento_google_calendar(nombre, telefono, fecha, hora, motivo):
     try:
-        service = obtener_servicio_tasks()
+        service = obtener_servicio_calendar()
         
-        fecha_hora_str = f"{fecha}T{hora.strftime('%H:%M:%S')}.000Z"
         
-        task = {
-            'title': f"Cita: {nombre} ({telefono})",
-            'notes': f"Motivo: {motivo}\nHora: {hora.strftime('%H:%M')}",
-            'due': fecha_hora_str
+        inicio_dt = datetime.combine(fecha, hora)
+        fin_dt = inicio_dt + timedelta(minutes=120)
+        
+        evento = {
+            'summary': f"Cita: {nombre} ({telefono})",
+            'description': f"Motivo: {motivo}",
+            'start': {
+                'dateTime': inicio_dt.isoformat(),
+                'timeZone': 'America/Guayaquil',  
+            },
+            'end': {
+                'dateTime': fin_dt.isoformat(),
+                'timeZone': 'America/Guayaquil',
+            },
         }
         
-        
-        result = service.tasks().insert(tasklist='@default', body=task).execute()
+        service.events().insert(calendarId='primary', body=evento).execute()
         return True
     except Exception as e:
-        print(f"Error al crear tarea: {e}")
+        print(f"Error al crear evento en el calendario: {e}")
         return False
 
 
@@ -127,13 +135,12 @@ if st.sidebar.button("Guardar Cita", use_container_width=True):
             })
             guardar_citas()
             
-            # Intentar crear el recordatorio en Google Tasks
-            # (Nota: Requiere configuración de credenciales de Google API en Streamlit)
-            exito_task = crear_recordatorio_google_tasks(nombre, telefono, fecha, hora_inicio, motivo)
-            if exito_task:
-                st.sidebar.success(f"Cita agendada")
+            # Crear el evento en Google Calendar
+            exito_calendar = crear_evento_google_calendar(nombre, telefono, fecha, hora_inicio, motivo)
+            if exito_calendar:
+                st.sidebar.success(f"Cita agendada y sincronizada con Google Calendar")
             else:
-                st.sidebar.success(f"Cita agendada para {nombre} (Aviso: Google Tasks requiere credenciales configuradas).")
+                st.sidebar.success(f"Cita agendada para {nombre} (Aviso: Google Calendar requiere credenciales configuradas).")
             
             st.rerun()
 
